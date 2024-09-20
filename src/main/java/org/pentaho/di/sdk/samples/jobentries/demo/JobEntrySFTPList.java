@@ -2,6 +2,7 @@ package org.pentaho.di.sdk.samples.jobentries.demo;
 
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.Result;
+import org.pentaho.di.core.ResultFile;
 import org.pentaho.di.core.annotations.JobEntry;
 import org.pentaho.di.core.encryption.Encr;
 import org.pentaho.di.core.util.Utils;
@@ -33,7 +34,8 @@ public class JobEntrySFTPList extends JobEntrySFTP implements Cloneable, JobEntr
     private static final Class<?> PKG = JobEntrySFTPList.class;
 
     public Result execute(Result previousResult, int nr) {
-        long filesRetrieved = 0L;
+        previousResult.setResult(false);
+
         if (this.parentJobMeta.getNamedClusterEmbedManager() != null) {
             this.parentJobMeta.getNamedClusterEmbedManager().passEmbeddedMetastoreKey(this, this.parentJobMeta.getEmbeddedMetastoreProviderKey());
         }
@@ -44,7 +46,7 @@ public class JobEntrySFTPList extends JobEntrySFTP implements Cloneable, JobEntr
 
         String realServerName;
 
-        SFTPClient sftpclient = null;
+        SFTPClient client = null;
         realServerName = this.environmentSubstitute(getServerName());
         String realServerPort = this.environmentSubstitute(getServerPort());
         String realUsername = this.environmentSubstitute(getUserName());
@@ -58,43 +60,40 @@ public class JobEntrySFTPList extends JobEntrySFTP implements Cloneable, JobEntr
             try {
                 if (this.isUseKeyFile()) {
                     realKeyFilename = this.environmentSubstitute(this.getKeyFilename());
-                    Result var56;
                     if (Utils.isEmpty(realKeyFilename)) {
                         this.logError(BaseMessages.getString(PKG, "JobSFTP.Error.KeyFileMissing"));
                         previousResult.setNrErrors(1L);
-                        var56 = previousResult;
-                        return var56;
+                        return previousResult;
                     }
 
                     if (!KettleVFS.fileExists(realKeyFilename)) {
                         this.logError(BaseMessages.getString(PKG, "JobSFTP.Error.KeyFileNotFound", realKeyFilename));
                         previousResult.setNrErrors(1L);
-                        var56 = previousResult;
-                        return var56;
+                        return previousResult;
                     }
 
                     realPassPhrase = this.environmentSubstitute(this.getKeyPassPhrase());
                 }
 
-                sftpclient = new SFTPClient(InetAddress.getByName(realServerName), Const.toInt(realServerPort, 22), realUsername, realKeyFilename, realPassPhrase);
+                client = new SFTPClient(InetAddress.getByName(realServerName), Const.toInt(realServerPort, 22), realUsername, realKeyFilename, realPassPhrase);
                 if (this.log.isDetailed()) {
                     this.logDetailed(BaseMessages.getString(PKG, "JobSFTP.Log.OpenedConnection", realServerName, realServerPort, realUsername));
                 }
 
-                sftpclient.setCompression(this.getCompression());
+                client.setCompression(this.getCompression());
                 String realProxyHost = this.environmentSubstitute(this.getProxyHost());
                 if (!Utils.isEmpty(realProxyHost)) {
                     String password = this.getRealPassword(this.getProxyPassword());
-                    sftpclient.setProxy(realProxyHost, this.environmentSubstitute(this.getProxyPort()), this.environmentSubstitute(this.getProxyUsername()), password, this.getProxyType());
+                    client.setProxy(realProxyHost, this.environmentSubstitute(this.getProxyPort()), this.environmentSubstitute(this.getProxyUsername()), password, this.getProxyType());
                 }
 
-                sftpclient.login(realPassword);
+                client.login(realPassword);
                 if (!Utils.isEmpty(realSftpDirString)) {
                     try {
-                        sftpclient.chdir(realSftpDirString);
-                    } catch (Exception var49) {
+                        client.chdir(realSftpDirString);
+                    } catch (Exception e) {
                         this.logError(BaseMessages.getString(PKG, "JobSFTP.Error.CanNotFindRemoteFolder", realSftpDirString));
-                        throw new Exception(var49);
+                        throw new Exception(e);
                     }
 
                     if (this.log.isDetailed()) {
@@ -102,13 +101,14 @@ public class JobEntrySFTPList extends JobEntrySFTP implements Cloneable, JobEntr
                     }
                 }
 
-                String[] fileList = sftpclient.dir();
+                String[] fileList = client.dir();
+
                 if (fileList == null) {
-                    previousResult.setResult(true);
                     if (this.log.isDetailed()) {
                         this.logDetailed(BaseMessages.getString(PKG, "JobSFTP.Log.Found", "0"));
                     }
 
+                    previousResult.setResult(true);
                     return previousResult;
                 }
 
@@ -123,7 +123,17 @@ public class JobEntrySFTPList extends JobEntrySFTP implements Cloneable, JobEntr
                 }
 
                 previousResult.setResult(true);
-                previousResult.setNrFilesRetrieved(filesRetrieved);
+                previousResult.setNrFilesRetrieved(resultList.size());
+
+                for (String file : resultList) {
+                    ResultFile resultFile = new ResultFile(
+                            ResultFile.FILE_TYPE_GENERAL,
+                            KettleVFS.getFileObject(file, this),
+                            parentJob.getJobname(),
+                            toString()
+                    );
+                    previousResult.getResultFiles().put(resultFile.getFile().toString(), resultFile);
+                }
             } catch (Exception e) {
                 previousResult.setNrErrors(1L);
                 this.logError(BaseMessages.getString(PKG, "JobSFTP.Error.GettingFiles", e.getMessage()));
@@ -133,8 +143,8 @@ public class JobEntrySFTPList extends JobEntrySFTP implements Cloneable, JobEntr
             return previousResult;
         } finally {
             try {
-                if (sftpclient != null) {
-                    sftpclient.disconnect();
+                if (client != null) {
+                    client.disconnect();
                 }
             } catch (Exception ignored) {
             }

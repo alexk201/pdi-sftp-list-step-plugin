@@ -9,7 +9,7 @@ import org.pentaho.di.ui.job.entries.sftp.JobEntrySFTPDialog;
 
 public class JobEntrySFTPListDialog extends JobEntrySFTPDialog implements JobEntryDialogInterface {
 
-    private static final Class<?> PKG = JobEntrySFTPList.class; // for i18n purposes
+    private static final Class<?> PKG = JobEntrySFTPList.class;
 
     public JobEntrySFTPListDialog(Shell parent, JobEntryInterface jobEntryInt, Repository rep, JobMeta jobMeta) {
         super(parent, jobEntryInt, rep, jobMeta);
